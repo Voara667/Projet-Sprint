@@ -44,8 +44,11 @@ Ces choix sont valides et ne doivent pas etre remis en question a chaque nouveau
 
 | Sprint | Objectif | Statut |
 |---|---|---|
-| Sprint 0 | Mettre en place le Front Controller, le Listener de chargement de configuration, et afficher dans le navigateur le nom de la classe controleur associee a une URL demandee | Terminé |
-| Sprint 1 | A definir | A venir |
+| Sprint 0 | Mettre en place le Front Controller, le Listener de chargement de configuration, et afficher dans le navigateur le nom de la classe controleur associee a une URL demandee | Terminé (fusionné dans main) |
+| Sprint 1 | Detection des controleurs par annotations et routes construites dynamiquement depuis WEB-INF/classes | Terminé |
+| Sprint 2 | A definir | A venir |
+
+Sprint 0 et Sprint 1 sont clos. Sprint 1 a ete implante avec detection des classes annotees @Controller et @RequestMapping.
 
 A mettre a jour a la fin de chaque sprint, avant de fusionner la Pull Request correspondante, pour que ce fichier reste fiable d'une session de travail a l'autre.
 

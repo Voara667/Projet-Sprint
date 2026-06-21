@@ -64,17 +64,17 @@ else
           cp -f "$JAR_NAME" "$TEST_APP_DIR/WEB-INF/lib/" && echo "Copie de $JAR_NAME vers $TEST_APP_DIR/WEB-INF/lib/ : OK"
         fi
 
-        # Compile test-app AaaController
-        A1="$TEST_APP_DIR/WEB-INF/classes/testapp/controller/AaaController.java"
-        if [ -f "$A1" ]; then
-          javac -cp "$SERVLET_JAR:$TEST_APP_DIR/WEB-INF/lib/$JAR_NAME" -d "$TEST_APP_DIR/WEB-INF/classes" "$A1"
+        # Compile all test-app controllers
+        CONTROLLER_SOURCES=$(find "$TEST_APP_DIR/WEB-INF/classes" -name "*.java")
+        if [ -n "$CONTROLLER_SOURCES" ]; then
+          javac -cp "$SERVLET_JAR:$TEST_APP_DIR/WEB-INF/lib/$JAR_NAME" -d "$TEST_APP_DIR/WEB-INF/classes" $CONTROLLER_SOURCES
           if [ $? -ne 0 ]; then
-            echo "Erreur lors de la compilation de AaaController." >&2
+            echo "Erreur lors de la compilation des controllers de test-app." >&2
           else
-            echo "Compilation de AaaController : OK"
+            echo "Compilation des controllers de test-app : OK"
           fi
         else
-          echo "Fichier $A1 introuvable, compilation de AaaController sautee." >&2
+          echo "Aucun controller test-app trouve, compilation des controllers ignoree." >&2
         fi
       fi
     fi
