@@ -1,5 +1,6 @@
 package framework.core;
 
+import framework.core.annotation.Controller;
 import framework.core.annotation.RequestMapping;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletContext;
@@ -8,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -15,33 +17,41 @@ import java.util.Map;
 
 public class FrontServletController extends HttpServlet {
 
-    private Map<String, List<String>> urlControllerMap;
-    private List<String[]> detectedControllers;
+    private Map<String, List<RouteInfo>> routes;
+    private List<String> routeDescriptions;
 
     @Override
     public void init() throws ServletException {
         super.init();
         ServletContext ctx = getServletContext();
         String classesPath = ctx.getRealPath("/WEB-INF/classes");
-        urlControllerMap = new HashMap<>();
-        detectedControllers = new ArrayList<>();
+        routes = new HashMap<>();
+        routeDescriptions = new ArrayList<>();
         List<Class<?>> controllers = ClassScanner.findAnnotatedControllers(classesPath, getClass().getClassLoader());
         for (Class<?> controller : controllers) {
-            if (!controller.isAnnotationPresent(RequestMapping.class)) {
-                ctx.log("FrontServletController: Warning - " + controller.getName() + " est annote @Controller mais sans @RequestMapping, ignoree.");
-                continue;
+            Method[] methods = controller.getDeclaredMethods();
+            boolean hasMappedMethod = false;
+            for (Method method : methods) {
+                if (!method.isAnnotationPresent(RequestMapping.class)) {
+                    continue;
+                }
+                hasMappedMethod = true;
+                RequestMapping mapping = method.getAnnotation(RequestMapping.class);
+                String url = mapping.value();
+                RouteInfo routeInfo = new RouteInfo(controller, method);
+                routes.computeIfAbsent(url, k -> new ArrayList<>()).add(routeInfo);
+                routeDescriptions.add(url + " -> " + controller.getName() + "." + method.getName());
             }
-            RequestMapping mapping = controller.getAnnotation(RequestMapping.class);
-            String url = mapping.value();
-            urlControllerMap.computeIfAbsent(url, k -> new ArrayList<>()).add(controller.getName());
-            detectedControllers.add(new String[]{url, controller.getName()});
+            if (!hasMappedMethod) {
+                ctx.log("FrontServletController: Warning - " + controller.getName() + " est annoté @Controller mais sans méthode @RequestMapping, ignoré.");
+            }
         }
-        if (urlControllerMap.isEmpty()) {
-            ctx.log("FrontServletController: Warning - aucun controleur valide né trouvé dans WEB-INF/classes.");
+        if (routes.isEmpty()) {
+            ctx.log("FrontServletController: Warning - aucune route valide trouvée dans WEB-INF/classes.");
         } else {
-            ctx.log("FrontServletController: " + detectedControllers.size() + " controleur(s) enregistres.");
-            for (String[] entry : detectedControllers) {
-                ctx.log("  " + entry[0] + " -> " + entry[1]);
+            ctx.log("FrontServletController: " + routes.size() + " URL(s) enregistrées.");
+            for (String route : routeDescriptions) {
+                ctx.log("  " + route);
             }
         }
     }
@@ -61,31 +71,31 @@ public class FrontServletController extends HttpServlet {
         if (path == null) {
             path = "/";
         }
-        List<String> controllers = urlControllerMap.get(path);
+        List<RouteInfo> matches = routes.get(path);
         resp.setContentType("text/html;charset=UTF-8");
-        if (controllers == null || controllers.isEmpty()) {
+        if (matches == null || matches.isEmpty()) {
             resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
         }
         PrintWriter out = resp.getWriter();
         out.println("<!DOCTYPE html>");
         out.println("<html><head><meta charset=\"UTF-8\"><title>Front Controller</title></head><body>");
         out.println("<section>");
-        if (controllers != null && !controllers.isEmpty()) {
+        if (matches != null && !matches.isEmpty()) {
             out.println("<h1>Chemin demande : " + escapeHtml(path) + "</h1>");
-            for (String controllerClass : controllers) {
-                out.println("<p>Controleur trouve : " + escapeHtml(controllerClass) + "</p>");
+            for (RouteInfo route : matches) {
+                out.println("<p>Route trouvee : " + escapeHtml(route.getControllerClass().getName()) + "." + escapeHtml(route.getAction().getName()) + "</p>");
             }
         } else {
-            out.println("<h1>Aucun controleur configure pour le chemin : " + escapeHtml(path) + "</h1>");
+            out.println("<h1>Aucune route configuree pour le chemin : " + escapeHtml(path) + "</h1>");
             out.println("</section>");
             out.println("<section>");
-            out.println("<h2>Controleurs detectes au demarrage</h2>");
-            if (detectedControllers.isEmpty()) {
-                out.println("<p>Aucun controleur detecte.</p>");
+            out.println("<h2>Routes detectees au demarrage</h2>");
+            if (routeDescriptions.isEmpty()) {
+                out.println("<p>Aucune route detectee.</p>");
             } else {
                 out.println("<ul>");
-                for (String[] entry : detectedControllers) {
-                    out.println("<li>" + escapeHtml(entry[0]) + "  ->  " + escapeHtml(entry[1]) + "</li>");
+                for (String entry : routeDescriptions) {
+                    out.println("<li>" + escapeHtml(entry) + "</li>");
                 }
                 out.println("</ul>");
             }
