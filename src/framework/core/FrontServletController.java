@@ -58,48 +58,65 @@ public class FrontServletController extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        processRequest(req, resp);
+        try {
+            processRequest(req, resp);
+        } catch (UrlNotFoundException e) {
+            writeNotFound(resp, e.getMessage());
+        }
     }
 
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        processRequest(req, resp);
+        try {
+            processRequest(req, resp);
+        } catch (UrlNotFoundException e) {
+            writeNotFound(resp, e.getMessage());
+        }
     }
 
-    private void processRequest(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+    private void processRequest(HttpServletRequest req, HttpServletResponse resp) throws IOException, UrlNotFoundException {
         String path = req.getPathInfo();
         if (path == null) {
             path = "/";
         }
         List<RouteInfo> matches = routes.get(path);
-        resp.setContentType("text/html;charset=UTF-8");
         if (matches == null || matches.isEmpty()) {
-            resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
+            throw new UrlNotFoundException("URL non supportee : " + path + "\nRoutes connues :\n" + buildKnownRoutesMessage());
         }
+        resp.setContentType("text/html;charset=UTF-8");
         PrintWriter out = resp.getWriter();
         out.println("<!DOCTYPE html>");
         out.println("<html><head><meta charset=\"UTF-8\"><title>Front Controller</title></head><body>");
         out.println("<section>");
-        if (matches != null && !matches.isEmpty()) {
-            out.println("<h1>Chemin demande : " + escapeHtml(path) + "</h1>");
-            for (RouteInfo route : matches) {
-                out.println("<p>Route trouvee : " + escapeHtml(route.getControllerClass().getName()) + "." + escapeHtml(route.getAction().getName()) + "</p>");
-            }
-        } else {
-            out.println("<h1>Aucune route configuree pour le chemin : " + escapeHtml(path) + "</h1>");
-            out.println("</section>");
-            out.println("<section>");
-            out.println("<h2>Routes detectees au demarrage</h2>");
-            if (routeDescriptions.isEmpty()) {
-                out.println("<p>Aucune route detectee.</p>");
-            } else {
-                out.println("<ul>");
-                for (String entry : routeDescriptions) {
-                    out.println("<li>" + escapeHtml(entry) + "</li>");
-                }
-                out.println("</ul>");
-            }
+        out.println("<h1>Chemin demande : " + escapeHtml(path) + "</h1>");
+        for (RouteInfo route : matches) {
+            out.println("<p>Route trouvee : " + escapeHtml(route.getControllerClass().getName()) + "." + escapeHtml(route.getAction().getName()) + "</p>");
         }
+        out.println("</section>");
+        out.println("</body></html>");
+        out.flush();
+    }
+
+    private String buildKnownRoutesMessage() {
+        if (routeDescriptions.isEmpty()) {
+            return "Aucune route detectee.";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (String route : routeDescriptions) {
+            builder.append(route).append("\n");
+        }
+        return builder.toString();
+    }
+
+    private void writeNotFound(HttpServletResponse resp, String message) throws IOException {
+        resp.setContentType("text/html;charset=UTF-8");
+        resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
+        PrintWriter out = resp.getWriter();
+        out.println("<!DOCTYPE html>");
+        out.println("<html><head><meta charset=\"UTF-8\"><title>404 Not Found</title></head><body>");
+        out.println("<section>");
+        out.println("<h1>URL non supportee</h1>");
+        out.println("<pre>" + escapeHtml(message) + "</pre>");
         out.println("</section>");
         out.println("</body></html>");
         out.flush();
