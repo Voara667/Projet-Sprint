@@ -1,4 +1,3 @@
-# Instructions du projet : Framework Web "Front Controller" maison
 
 Ce fichier est la mémoire durable du projet. Il doit être recopié en entier au début de toute nouvelle discussion portant sur un sprint suivant, pour ne pas avoir à réexpliquer le contexte à chaque fois. Il doit aussi être committé à la racine du dépôt du framework et mis à jour à la fin de chaque sprint, avant la fusion de la Pull Request correspondante.
 
