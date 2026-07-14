@@ -17,7 +17,7 @@ import java.util.Map;
 
 public class FrontServletController extends HttpServlet {
 
-    private Map<String, List<RouteInfo>> routes;
+    private Map<UrlMethod, List<RouteInfo>> routes;
     private List<String> routeDescriptions;
 
     @Override
@@ -38,9 +38,11 @@ public class FrontServletController extends HttpServlet {
                 hasMappedMethod = true;
                 RequestMapping mapping = method.getAnnotation(RequestMapping.class);
                 String url = mapping.value();
+                String httpMethod = mapping.method();
                 RouteInfo routeInfo = new RouteInfo(controller, method);
-                routes.computeIfAbsent(url, k -> new ArrayList<>()).add(routeInfo);
-                routeDescriptions.add(url + " -> " + controller.getName() + "." + method.getName());
+                UrlMethod key = new UrlMethod(url, httpMethod);
+                routes.computeIfAbsent(key, k -> new ArrayList<>()).add(routeInfo);
+                routeDescriptions.add(url + " [" + httpMethod + "] -> " + controller.getName() + "." + method.getName());
             }
             if (!hasMappedMethod) {
                 ctx.log("FrontServletController: Warning - " + controller.getName() + " est annoté @Controller mais sans méthode @RequestMapping, ignoré.");
@@ -62,6 +64,8 @@ public class FrontServletController extends HttpServlet {
             processRequest(req, resp);
         } catch (UrlNotFoundException e) {
             writeNotFound(resp, e.getMessage());
+        } catch (HttpMethodNotSupportedException e) {
+            writeMethodNotSupported(resp, e.getMessage());
         }
     }
 
@@ -71,17 +75,33 @@ public class FrontServletController extends HttpServlet {
             processRequest(req, resp);
         } catch (UrlNotFoundException e) {
             writeNotFound(resp, e.getMessage());
+        } catch (HttpMethodNotSupportedException e) {
+            writeMethodNotSupported(resp, e.getMessage());
         }
     }
 
-    private void processRequest(HttpServletRequest req, HttpServletResponse resp) throws IOException, UrlNotFoundException {
+    private void processRequest(HttpServletRequest req, HttpServletResponse resp) throws IOException, UrlNotFoundException, HttpMethodNotSupportedException {
         String path = req.getPathInfo();
         if (path == null) {
             path = "/";
         }
-        List<RouteInfo> matches = routes.get(path);
+        String reqMethod = req.getMethod();
+        UrlMethod lookup = new UrlMethod(path, reqMethod);
+        List<RouteInfo> matches = routes.get(lookup);
         if (matches == null || matches.isEmpty()) {
-            throw new UrlNotFoundException("URL non supportee : " + path + "\nRoutes connues :\n" + buildKnownRoutesMessage());
+            boolean urlExists = false;
+            List<String> supported = new ArrayList<>();
+            for (UrlMethod um : routes.keySet()) {
+                if (um.getUrl().equals(path)) {
+                    urlExists = true;
+                    supported.add(um.getMethod());
+                }
+            }
+            if (urlExists) {
+                throw new HttpMethodNotSupportedException("Methode HTTP non supportee pour l'URL : " + path + "\nMethode demandee : " + reqMethod + "\nMethodes disponibles : " + String.join(", ", supported));
+            } else {
+                throw new UrlNotFoundException("URL non supportee : " + path + "\nRoutes connues :\n" + buildKnownRoutesMessage());
+            }
         }
         resp.setContentType("text/html;charset=UTF-8");
         PrintWriter out = resp.getWriter();
@@ -116,6 +136,20 @@ public class FrontServletController extends HttpServlet {
         out.println("<html><head><meta charset=\"UTF-8\"><title>404 Not Found</title></head><body>");
         out.println("<section>");
         out.println("<h1>URL non supportee</h1>");
+        out.println("<pre>" + escapeHtml(message) + "</pre>");
+        out.println("</section>");
+        out.println("</body></html>");
+        out.flush();
+    }
+
+    private void writeMethodNotSupported(HttpServletResponse resp, String message) throws IOException {
+        resp.setContentType("text/html;charset=UTF-8");
+        resp.setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+        PrintWriter out = resp.getWriter();
+        out.println("<!DOCTYPE html>");
+        out.println("<html><head><meta charset=\"UTF-8\"><title>405 Method Not Allowed</title></head><body>");
+        out.println("<section>");
+        out.println("<h1>Methode HTTP non supportee</h1>");
         out.println("<pre>" + escapeHtml(message) + "</pre>");
         out.println("</section>");
         out.println("</body></html>");
