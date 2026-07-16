@@ -2,9 +2,9 @@ package framework.core;
 
 public class UrlMethod {
     private final String url;
-    private final String method;
+    private final HttpMethod method;
 
-    public UrlMethod(String url, String method) {
+    public UrlMethod(String url, HttpMethod method) {
         this.url = url;
         this.method = method;
     }
@@ -13,7 +13,7 @@ public class UrlMethod {
         return url;
     }
 
-    public String getMethod() {
+    public HttpMethod getMethod() {
         return method;
     }
 
@@ -22,13 +22,16 @@ public class UrlMethod {
         if (this == obj) return true;
         if (!(obj instanceof UrlMethod)) return false;
         UrlMethod other = (UrlMethod) obj;
-        if (url == null) return other.url == null && (method == null ? other.method == null : method.equalsIgnoreCase(other.method));
-        return url.equals(other.url) && (method == null ? other.method == null : method.equalsIgnoreCase(other.method));
+        if (url == null) {
+            return other.url == null && method == other.method;
+        }
+        return url.equals(other.url) && method == other.method;
     }
 
     @Override
     public int hashCode() {
-        String m = method == null ? "" : method.toUpperCase();
-        return (url + m).hashCode();
+        int result = url == null ? 0 : url.hashCode();
+        result = 31 * result + (method == null ? 0 : method.hashCode());
+        return result;
     }
 }
