@@ -1,7 +1,9 @@
 package framework.core;
 
+import framework.core.HttpMethod;
 import framework.core.annotation.Controller;
 import framework.core.annotation.RequestMapping;
+import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.http.HttpServlet;
@@ -12,7 +14,6 @@ import java.io.PrintWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -22,48 +23,15 @@ public class FrontServletController extends HttpServlet {
     private List<String> routeDescriptions;
 
     @Override
-    public void init() throws ServletException {
-        super.init();
+    public void init(ServletConfig config) throws ServletException {
+        super.init(config);
         ServletContext ctx = getServletContext();
-        String classesPath = ctx.getRealPath("/WEB-INF/classes");
-        routes = new HashMap<>();
-        routeDescriptions = new ArrayList<>();
-        List<Class<?>> controllers = ClassScanner.findAnnotatedControllers(classesPath, getClass().getClassLoader());
-        for (Class<?> controller : controllers) {
-            Method[] methods = controller.getDeclaredMethods();
-            boolean hasMappedMethod = false;
-            for (Method method : methods) {
-                if (!method.isAnnotationPresent(RequestMapping.class)) {
-                    continue;
-                }
-                hasMappedMethod = true;
-                RequestMapping mapping = method.getAnnotation(RequestMapping.class);
-                String url = mapping.value();
-                HttpMethod httpMethod = mapping.method();
-                RouteInfo routeInfo = new RouteInfo(controller, method);
-                UrlMethod key = new UrlMethod(url, httpMethod);
-                if (routes.containsKey(key)) {
-                    RouteInfo existing = routes.get(key);
-                    String message = "Route en doublon : " + url + " [" + httpMethod + "] déjà déclarée par "
-                            + existing.getControllerClass().getSimpleName() + "." + existing.getAction().getName() + "(), en conflit avec "
-                            + controller.getSimpleName() + "." + method.getName() + "()";
-                    throw new DuplicateRouteException(message);
-                }
-                routes.put(key, routeInfo);
-                routeDescriptions.add(url + " [" + httpMethod + "] -> " + controller.getName() + "." + method.getName());
-            }
-            if (!hasMappedMethod) {
-                ctx.log("FrontServletController: Warning - " + controller.getName() + " est annoté @Controller mais sans méthode @RequestMapping, ignoré.");
-            }
+        Object stored = ctx.getAttribute("framework.routes");
+        if (!(stored instanceof Map)) {
+            throw new ServletException("Attribut framework.routes manquant ou invalide dans le ServletContext.");
         }
-        if (routes.isEmpty()) {
-            ctx.log("FrontServletController: Warning - aucune route valide trouvée dans WEB-INF/classes.");
-        } else {
-            ctx.log("FrontServletController: " + routes.size() + " URL(s) enregistrées.");
-            for (String route : routeDescriptions) {
-                ctx.log("  " + route);
-            }
-        }
+        this.routes = (Map<UrlMethod, RouteInfo>) stored;
+        this.routeDescriptions = buildRouteDescriptions(this.routes);
     }
 
     @Override
@@ -93,14 +61,16 @@ public class FrontServletController extends HttpServlet {
         if (path == null) {
             path = "/";
         }
-        HttpMethod reqMethod = null;
+        String reqMethod = req.getMethod();
+        HttpMethod httpMethod;
         try {
-            reqMethod = HttpMethod.valueOf(req.getMethod());
-        } catch (IllegalArgumentException ignored) {
+            httpMethod = HttpMethod.valueOf(reqMethod.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new HttpMethodNotSupportedException("Methode HTTP inconnue : " + reqMethod);
         }
-        UrlMethod lookup = reqMethod == null ? null : new UrlMethod(path, reqMethod);
-        RouteInfo routeInfo = lookup == null ? null : routes.get(lookup);
-        if (routeInfo == null) {
+        UrlMethod lookup = new UrlMethod(path, httpMethod);
+        RouteInfo route = routes.get(lookup);
+        if (route == null) {
             boolean urlExists = false;
             List<String> supported = new ArrayList<>();
             for (UrlMethod um : routes.keySet()) {
@@ -116,28 +86,42 @@ public class FrontServletController extends HttpServlet {
                 throw new UrlNotFoundException("URL non supportee : " + path + "\nRoutes connues :\n" + buildKnownRoutesMessage());
             }
         }
-        StringBuilder output = new StringBuilder();
-        output.append("<!DOCTYPE html>");
-        output.append("<html><head><meta charset=\"UTF-8\"><title>Front Controller</title></head><body>");
-        output.append("<section>");
-        output.append("<h1>Chemin demande : " + escapeHtml(path) + "</h1>");
-        output.append("<p>Route trouvee : " + escapeHtml(routeInfo.getControllerClass().getName()) + "." + escapeHtml(routeInfo.getAction().getName()) + "</p>");
-        output.append("</section>");
-        output.append("</body></html>");
 
+        String html = buildRouteFoundHtml(path, route);
         try {
-            Object controllerInstance = routeInfo.getControllerClass().getDeclaredConstructor().newInstance();
-            routeInfo.getAction().invoke(controllerInstance);
-            resp.setContentType("text/html;charset=UTF-8");
+            Object controllerInstance = route.getControllerClass().getDeclaredConstructor().newInstance();
+            route.getAction().invoke(controllerInstance);
             PrintWriter out = resp.getWriter();
-            out.println(output.toString());
+            out.println(html);
             out.flush();
         } catch (InvocationTargetException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             writeServerError(resp, "Erreur d'invocation : " + cause.getClass().getSimpleName() + " - " + cause.getMessage());
-        } catch (Exception e) {
+        } catch (ReflectiveOperationException e) {
             writeServerError(resp, "Erreur d'invocation : " + e.getClass().getSimpleName() + " - " + e.getMessage());
         }
+    }
+
+    private String buildRouteFoundHtml(String path, RouteInfo route) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("<!DOCTYPE html>");
+        builder.append("<html><head><meta charset=\"UTF-8\"><title>Front Controller</title></head><body>");
+        builder.append("<section>");
+        builder.append("<h1>Chemin demande : ").append(escapeHtml(path)).append("</h1>");
+        builder.append("<p>Route trouvee : ").append(escapeHtml(route.getControllerClass().getName())).append(".").append(escapeHtml(route.getAction().getName())).append("</p>");
+        builder.append("</section>");
+        builder.append("</body></html>");
+        return builder.toString();
+    }
+
+    private List<String> buildRouteDescriptions(Map<UrlMethod, RouteInfo> routes) {
+        List<String> descriptions = new ArrayList<>();
+        for (Map.Entry<UrlMethod, RouteInfo> entry : routes.entrySet()) {
+            UrlMethod key = entry.getKey();
+            RouteInfo routeInfo = entry.getValue();
+            descriptions.add(key.getMethod() + " " + key.getUrl() + " -> " + routeInfo.getControllerClass().getName() + "." + routeInfo.getAction().getName());
+        }
+        return descriptions;
     }
 
     private String buildKnownRoutesMessage() {
@@ -149,6 +133,20 @@ public class FrontServletController extends HttpServlet {
             builder.append(route).append("\n");
         }
         return builder.toString();
+    }
+
+    private void writeServerError(HttpServletResponse resp, String message) throws IOException {
+        resp.setContentType("text/html;charset=UTF-8");
+        resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        PrintWriter out = resp.getWriter();
+        out.println("<!DOCTYPE html>");
+        out.println("<html><head><meta charset=\"UTF-8\"><title>500 Internal Server Error</title></head><body>");
+        out.println("<section>");
+        out.println("<h1>Erreur serveur</h1>");
+        out.println("<pre>" + escapeHtml(message) + "</pre>");
+        out.println("</section>");
+        out.println("</body></html>");
+        out.flush();
     }
 
     private void writeNotFound(HttpServletResponse resp, String message) throws IOException {
