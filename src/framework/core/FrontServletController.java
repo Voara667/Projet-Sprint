@@ -80,7 +80,8 @@ public class FrontServletController extends HttpServlet {
                 }
             }
             if (urlExists) {
-                throw new HttpMethodNotSupportedException("Methode HTTP non supportee pour l'URL : " + path + "\nMethode demandee : " + reqMethod + "\nMethodes disponibles : " + String.join(", ", supported));
+                String requested = reqMethod == null ? req.getMethod() : reqMethod.name();
+                throw new HttpMethodNotSupportedException("Methode HTTP non supportee pour l'URL : " + path + "\nMethode demandee : " + requested + "\nMethodes disponibles : " + String.join(", ", supported));
             } else {
                 throw new UrlNotFoundException("URL non supportee : " + path + "\nRoutes connues :\n" + buildKnownRoutesMessage());
             }
@@ -169,7 +170,20 @@ public class FrontServletController extends HttpServlet {
         out.println("<!DOCTYPE html>");
         out.println("<html><head><meta charset=\"UTF-8\"><title>405 Method Not Allowed</title></head><body>");
         out.println("<section>");
-        out.println("<h1>Methode HTTP non supportee</h1>");
+        out.println("<h1>Methode HTTP non supportee</h1><p>" + escapeHtml(message) + "</p>");
+        out.println("</section>");
+        out.println("</body></html>");
+        out.flush();
+    }
+
+    private void writeServerError(HttpServletResponse resp, String message) throws IOException {
+        resp.setContentType("text/html;charset=UTF-8");
+        resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        PrintWriter out = resp.getWriter();
+        out.println("<!DOCTYPE html>");
+        out.println("<html><head><meta charset=\"UTF-8\"><title>500 Internal Server Error</title></head><body>");
+        out.println("<section>");
+        out.println("<h1>Erreur interne du serveur</h1>");
         out.println("<pre>" + escapeHtml(message) + "</pre>");
         out.println("</section>");
         out.println("</body></html>");
