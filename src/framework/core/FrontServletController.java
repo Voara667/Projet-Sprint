@@ -21,6 +21,8 @@ public class FrontServletController extends HttpServlet {
 
     private Map<UrlMethod, RouteInfo> routes;
     private List<String> routeDescriptions;
+    private String viewPrefix;
+    private String viewSuffix;
 
     @Override
     public void init(ServletConfig config) throws ServletException {
@@ -32,6 +34,19 @@ public class FrontServletController extends HttpServlet {
         }
         this.routes = (Map<UrlMethod, RouteInfo>) stored;
         this.routeDescriptions = buildRouteDescriptions(this.routes);
+        // Read view prefix/suffix init params
+        String vp = config.getInitParameter("framework.viewPrefix");
+        if (vp == null || vp.isEmpty()) {
+            vp = "/WEB-INF/views/";
+            ctx.log("[FRAMEWORK] Aucun framework.viewPrefix defini, valeur par defaut utilisee : " + vp);
+        }
+        String vs = config.getInitParameter("framework.viewSuffix");
+        if (vs == null || vs.isEmpty()) {
+            vs = ".jsp";
+            ctx.log("[FRAMEWORK] Aucun framework.viewSuffix defini, valeur par defaut utilisee : " + vs);
+        }
+        this.viewPrefix = vp;
+        this.viewSuffix = vs;
     }
 
     @Override
@@ -56,7 +71,7 @@ public class FrontServletController extends HttpServlet {
         }
     }
 
-    private void processRequest(HttpServletRequest req, HttpServletResponse resp) throws IOException, UrlNotFoundException, HttpMethodNotSupportedException {
+    private void processRequest(HttpServletRequest req, HttpServletResponse resp) throws IOException, UrlNotFoundException, HttpMethodNotSupportedException, ServletException {
         String path = req.getPathInfo();
         if (path == null) {
             path = "/";
@@ -89,10 +104,18 @@ public class FrontServletController extends HttpServlet {
         String html = buildRouteFoundHtml(path, route);
         try {
             Object controllerInstance = route.getControllerClass().getDeclaredConstructor().newInstance();
-            route.getAction().invoke(controllerInstance);
-            PrintWriter out = resp.getWriter();
-            out.println(html);
-            out.flush();
+            Object result = route.getAction().invoke(controllerInstance);
+            if (result instanceof ModelAndView) {
+                ModelAndView mv = (ModelAndView) result;
+                for (java.util.Map.Entry<String, Object> entry : mv.getAttributes().entrySet()) {
+                    req.setAttribute(entry.getKey(), entry.getValue());
+                }
+                req.getRequestDispatcher(viewPrefix + mv.getUrl() + viewSuffix).forward(req, resp);
+            } else {
+                PrintWriter out = resp.getWriter();
+                out.println(html);
+                out.flush();
+            }
         } catch (InvocationTargetException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             writeServerError(resp, "Erreur d'invocation : " + cause.getClass().getSimpleName() + " - " + cause.getMessage());
