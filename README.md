@@ -33,6 +33,4 @@ Le script compile le framework, génère `framework.jar`, le copie avec les jars
 - Une action peut retourner un `ModelAndView` : le framework transfère les données vers la vue et l'affiche (JSP), sinon elle affiche un simple diagnostic.
 - Une action peut demander un `ApplicationContext` Spring en paramètre, pour aller chercher des beans (repository, service) gérés par Spring — `null` si Spring n'est pas démarré, pas d'erreur du framework dans ce cas.
 
-## Documentation complète
-
-Voir [`PROJECT_INSTRUCTIONS.md`](./PROJECT_INSTRUCTIONS.md) pour l'architecture détaillée, le glossaire et l'historique sprint par sprint.
+Note importante: le contrôleur doit toujours passer par ApplicationContext ctx en paramètre et appeler ctx.getBean(...) lui-même. 
