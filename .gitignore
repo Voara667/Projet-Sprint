@@ -5,4 +5,4 @@ framework.jar
 *.iml
 .vscode/
 .DS_Store
-PROJECT_INSTRUCTIONS.md
+test-app/
