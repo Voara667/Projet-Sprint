@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 
 # Deploy script for the framework
-TEST_APP_DIR="../test-app"
+#
+# Usage:
+#   ./deploy.sh                     -> deploie vers ../test-app (comportement par defaut)
+#   ./deploy.sh /chemin/vers/projet -> deploie vers le projet consommateur indique
+#   TEST_APP_DIR=/chemin ./deploy.sh -> equivalent, via variable d'environnement
+#
+# Le nom du contexte Tomcat (dossier sous webapps/ et URL finale affichee)
+# est derive automatiquement du nom du dossier cible : par exemple un projet
+# situe dans ../mon-projet-demo sera deploye sous webapps/mon-projet-demo.
+TEST_APP_DIR="${1:-${TEST_APP_DIR:-../test-app}}"
+APP_NAME="$(basename "$TEST_APP_DIR")"
 BUILD_DIR="build"
 JAR_NAME="framework.jar"
 
@@ -17,6 +27,13 @@ SPRING_JARS=(
 )
 
 echo "Starting deploy.sh"
+echo "Projet cible : $TEST_APP_DIR (contexte Tomcat : $APP_NAME)"
+
+if [ ! -d "$TEST_APP_DIR" ]; then
+  echo "Erreur: le dossier du projet cible '$TEST_APP_DIR' n'existe pas." >&2
+  echo "Usage: ./deploy.sh [/chemin/vers/le/projet]" >&2
+  exit 1
+fi
 
 # Auto-detect CATALINA_HOME if not set
 if [ -z "$CATALINA_HOME" ]; then
@@ -90,7 +107,7 @@ else
           cp -f "$JAR_NAME" "$TEST_APP_DIR/WEB-INF/lib/" && echo "Copie de $JAR_NAME vers $TEST_APP_DIR/WEB-INF/lib/ : OK"
         fi
 
-        # Copy Spring jars to test-app lib if needed
+        # Copy Spring jars to the target project lib if needed
         mkdir -p "$TEST_APP_DIR/WEB-INF/lib"
         for jar in "${SPRING_JARS[@]}"; do
           found=$(find "$HOME/.m2/repository/org/springframework" -name "$jar" 2>/dev/null | head -n 1 || true)
@@ -100,17 +117,17 @@ else
         done
         echo "Spring jars copies dans $TEST_APP_DIR/WEB-INF/lib/ : OK"
 
-        # Compile all test-app controllers
+        # Compile all controllers of the target project
         CONTROLLER_SOURCES=$(find "$TEST_APP_DIR/WEB-INF/classes" -name "*.java")
         if [ -n "$CONTROLLER_SOURCES" ]; then
           javac -cp "$SERVLET_JAR:$TEST_APP_DIR/WEB-INF/lib/$JAR_NAME:$SPRING_CP" -d "$TEST_APP_DIR/WEB-INF/classes" $CONTROLLER_SOURCES
           if [ $? -ne 0 ]; then
-            echo "Erreur lors de la compilation des controllers de test-app." >&2
+            echo "Erreur lors de la compilation des controllers de $APP_NAME." >&2
           else
-            echo "Compilation des controllers de test-app : OK"
+            echo "Compilation des controllers de $APP_NAME : OK"
           fi
         else
-          echo "Aucun controller test-app trouve, compilation des controllers ignoree." >&2
+          echo "Aucun controller trouve dans $APP_NAME, compilation des controllers ignoree." >&2
         fi
       fi
     fi
@@ -124,18 +141,18 @@ if [ -n "$CATALINA_HOME" ] && [ -d "$CATALINA_HOME/webapps" ]; then
   echo ""
   echo "Deploiement automatique sur Tomcat..."
   
-  # Remove existing test-app if present
-  if [ -d "$CATALINA_HOME/webapps/test-app" ]; then
-    rm -rf "$CATALINA_HOME/webapps/test-app"
+  # Remove existing deployment if present
+  if [ -d "$CATALINA_HOME/webapps/$APP_NAME" ]; then
+    rm -rf "$CATALINA_HOME/webapps/$APP_NAME"
     echo "Ancien deploiement supprime."
   fi
   
-  # Copy test-app to Tomcat
-  cp -r "$TEST_APP_DIR" "$CATALINA_HOME/webapps/" 2>/dev/null
+  # Copy project to Tomcat
+  cp -r "$TEST_APP_DIR" "$CATALINA_HOME/webapps/$APP_NAME" 2>/dev/null
   if [ $? -ne 0 ]; then
-    echo "Erreur lors de la copie de test-app vers $CATALINA_HOME/webapps/" >&2
+    echo "Erreur lors de la copie de $TEST_APP_DIR vers $CATALINA_HOME/webapps/$APP_NAME" >&2
   else
-    echo "Copie de test-app vers Tomcat : OK"
+    echo "Copie de $TEST_APP_DIR vers Tomcat ($APP_NAME) : OK"
     
     # Restart Tomcat
     echo "Redemarrage de Tomcat..."
@@ -145,7 +162,7 @@ if [ -n "$CATALINA_HOME" ] && [ -d "$CATALINA_HOME/webapps" ]; then
     if [ $? -eq 0 ]; then
       echo "Tomcat redemarre : OK"
       echo ""
-      echo "Application disponible sur http://localhost:8080/test-app/aaa"
+      echo "Application disponible sur http://localhost:8080/$APP_NAME/"
       sleep 3
     else
       echo "Redemarrage de Tomcat : tentative faite (voir logs Tomcat pour details)."
