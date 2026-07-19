@@ -5,6 +5,17 @@ TEST_APP_DIR="../test-app"
 BUILD_DIR="build"
 JAR_NAME="framework.jar"
 
+SPRING_VERSION="6.2.18"
+SPRING_JARS=(
+  "spring-core-${SPRING_VERSION}.jar"
+  "spring-context-${SPRING_VERSION}.jar"
+  "spring-beans-${SPRING_VERSION}.jar"
+  "spring-web-${SPRING_VERSION}.jar"
+  "spring-expression-${SPRING_VERSION}.jar"
+  "spring-aop-${SPRING_VERSION}.jar"
+  "spring-jcl-${SPRING_VERSION}.jar"
+)
+
 echo "Starting deploy.sh"
 
 # Auto-detect CATALINA_HOME if not set
@@ -23,11 +34,26 @@ if [ -n "$CATALINA_HOME" ] && [ -d "$CATALINA_HOME/lib" ]; then
   SERVLET_JAR=$(ls "$CATALINA_HOME"/lib/*servlet* 2>/dev/null | head -n 1 || true)
 fi
 
+# Locate Spring jars from local Maven repository
+SPRING_CP=""
+for jar in "${SPRING_JARS[@]}"; do
+  found=$(find "$HOME/.m2/repository/org/springframework" -name "$jar" 2>/dev/null | head -n 1 || true)
+  if [ -z "$found" ]; then
+    echo "Erreur: jar Spring manquant dans le repository Maven local: $jar" >&2
+  else
+    SPRING_CP="$SPRING_CP:$found"
+  fi
+done
+
 if [ -z "$SERVLET_JAR" ]; then
   echo "Erreur: impossible de localiser le jar de l'API Servlet (cherchez dans CATALINA_HOME/lib)." >&2
   echo "Compilation du framework : ECHOUÉ" >&2
+elif [ -z "$SPRING_CP" ]; then
+  echo "Erreur: impossible de localiser les jars Spring requis dans ~/.m2/repository." >&2
+  echo "Compilation du framework : ECHOUÉ" >&2
 else
   echo "Utilisation du servlet jar : $SERVLET_JAR"
+  echo "Utilisation des jars Spring : $SPRING_CP"
 
   # Compile framework sources
   mkdir -p "$BUILD_DIR"
@@ -36,7 +62,7 @@ else
     echo "Aucun fichier source trouvé dans src/." >&2
     echo "Compilation du framework : ECHOUÉ" >&2
   else
-    javac -cp "$SERVLET_JAR" -d "$BUILD_DIR" $SRC_FILES
+    javac -cp "$SERVLET_JAR$SPRING_CP" -d "$BUILD_DIR" $SRC_FILES
     if [ $? -ne 0 ]; then
       echo "Erreur lors de la compilation des sources du framework." >&2
       echo "Compilation du framework : ECHOUÉ" >&2
@@ -64,10 +90,20 @@ else
           cp -f "$JAR_NAME" "$TEST_APP_DIR/WEB-INF/lib/" && echo "Copie de $JAR_NAME vers $TEST_APP_DIR/WEB-INF/lib/ : OK"
         fi
 
+        # Copy Spring jars to test-app lib if needed
+        mkdir -p "$TEST_APP_DIR/WEB-INF/lib"
+        for jar in "${SPRING_JARS[@]}"; do
+          found=$(find "$HOME/.m2/repository/org/springframework" -name "$jar" 2>/dev/null | head -n 1 || true)
+          if [ -n "$found" ]; then
+            cp -f "$found" "$TEST_APP_DIR/WEB-INF/lib/"
+          fi
+        done
+        echo "Spring jars copies dans $TEST_APP_DIR/WEB-INF/lib/ : OK"
+
         # Compile all test-app controllers
         CONTROLLER_SOURCES=$(find "$TEST_APP_DIR/WEB-INF/classes" -name "*.java")
         if [ -n "$CONTROLLER_SOURCES" ]; then
-          javac -cp "$SERVLET_JAR:$TEST_APP_DIR/WEB-INF/lib/$JAR_NAME" -d "$TEST_APP_DIR/WEB-INF/classes" $CONTROLLER_SOURCES
+          javac -cp "$SERVLET_JAR:$TEST_APP_DIR/WEB-INF/lib/$JAR_NAME:$SPRING_CP" -d "$TEST_APP_DIR/WEB-INF/classes" $CONTROLLER_SOURCES
           if [ $? -ne 0 ]; then
             echo "Erreur lors de la compilation des controllers de test-app." >&2
           else

@@ -16,6 +16,8 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.springframework.context.ApplicationContext;
+import org.springframework.web.context.support.WebApplicationContextUtils;
 
 public class FrontServletController extends HttpServlet {
 
@@ -95,7 +97,7 @@ public class FrontServletController extends HttpServlet {
                 }
             }
             if (urlExists) {
-                String requested = reqMethod == null ? req.getMethod() : reqMethod.name();
+                String requested = reqMethod == null ? req.getMethod() : reqMethod;
                 throw new HttpMethodNotSupportedException("Methode HTTP non supportee pour l'URL : " + path + "\nMethode demandee : " + requested + "\nMethodes disponibles : " + String.join(", ", supported));
             } else {
                 throw new UrlNotFoundException("URL non supportee : " + path + "\nRoutes connues :\n" + buildKnownRoutesMessage());
@@ -105,7 +107,9 @@ public class FrontServletController extends HttpServlet {
         String html = buildRouteFoundHtml(path, route);
         try {
             Object controllerInstance = route.getControllerClass().getDeclaredConstructor().newInstance();
-            Object result = route.getAction().invoke(controllerInstance);
+            Method action = route.getAction();
+            Object[] args = buildActionArguments(action, req, resp);
+            Object result = action.invoke(controllerInstance, args);
             if (result instanceof ModelAndView) {
                 ModelAndView mv = (ModelAndView) result;
                 for (java.util.Map.Entry<String, Object> entry : mv.getAttributes().entrySet()) {
@@ -120,6 +124,8 @@ public class FrontServletController extends HttpServlet {
         } catch (InvocationTargetException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             writeServerError(resp, "Erreur d'invocation : " + cause.getClass().getSimpleName() + " - " + cause.getMessage());
+        } catch (IllegalArgumentException e) {
+            writeServerError(resp, "Argument invalide pour la méthode d'action : " + e.getMessage());
         } catch (ReflectiveOperationException e) {
             writeServerError(resp, "Erreur d'invocation : " + e.getClass().getSimpleName() + " - " + e.getMessage());
         }
@@ -199,18 +205,33 @@ public class FrontServletController extends HttpServlet {
         out.flush();
     }
 
-    private void writeServerError(HttpServletResponse resp, String message) throws IOException {
-        resp.setContentType("text/html;charset=UTF-8");
-        resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-        PrintWriter out = resp.getWriter();
-        out.println("<!DOCTYPE html>");
-        out.println("<html><head><meta charset=\"UTF-8\"><title>500 Internal Server Error</title></head><body>");
-        out.println("<section>");
-        out.println("<h1>Erreur interne du serveur</h1>");
-        out.println("<pre>" + escapeHtml(message) + "</pre>");
-        out.println("</section>");
-        out.println("</body></html>");
-        out.flush();
+    private Object[] buildActionArguments(Method action, HttpServletRequest req, HttpServletResponse resp) {
+        Class<?>[] parameterTypes = action.getParameterTypes();
+        Object[] args = new Object[parameterTypes.length];
+        ApplicationContext applicationContext = null;
+        boolean applicationContextResolved = false;
+        for (int i = 0; i < parameterTypes.length; i++) {
+            Class<?> type = parameterTypes[i];
+            if (ApplicationContext.class.isAssignableFrom(type)) {
+                if (!applicationContextResolved) {
+                    applicationContext = getSpringApplicationContext();
+                    applicationContextResolved = true;
+                }
+                args[i] = applicationContext;
+            } else if (HttpServletRequest.class.isAssignableFrom(type)) {
+                args[i] = req;
+            } else if (HttpServletResponse.class.isAssignableFrom(type)) {
+                args[i] = resp;
+            } else {
+                throw new IllegalArgumentException("Type de parametre non supporte : " + type.getName());
+            }
+        }
+        return args;
+    }
+
+    private ApplicationContext getSpringApplicationContext() {
+        ServletContext servletContext = getServletContext();
+        return WebApplicationContextUtils.getWebApplicationContext(servletContext);
     }
 
     private String escapeHtml(String s) {
