@@ -110,7 +110,9 @@ public class FrontServletController extends HttpServlet {
             Method action = route.getAction();
             Object[] args = buildActionArguments(action, req, resp);
             Object result = action.invoke(controllerInstance, args);
-            if (result instanceof ModelAndView) {
+            if (route.isApi()) {
+                writeApiResponse(resp, action, result);
+            } else if (result instanceof ModelAndView) {
                 ModelAndView mv = (ModelAndView) result;
                 for (java.util.Map.Entry<String, Object> entry : mv.getAttributes().entrySet()) {
                     req.setAttribute(entry.getKey(), entry.getValue());
@@ -123,12 +125,67 @@ public class FrontServletController extends HttpServlet {
             }
         } catch (InvocationTargetException e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
-            writeServerError(resp, "Erreur d'invocation : " + cause.getClass().getSimpleName() + " - " + cause.getMessage());
+            String message = "Erreur d'invocation : " + cause.getClass().getSimpleName() + " - " + cause.getMessage();
+            if (route.isApi()) {
+                writeApiError(resp, message);
+            } else {
+                writeServerError(resp, message);
+            }
         } catch (IllegalArgumentException e) {
-            writeServerError(resp, "Argument invalide pour la méthode d'action : " + e.getMessage());
+            String message = "Argument invalide pour la méthode d'action : " + e.getMessage();
+            if (route.isApi()) {
+                writeApiError(resp, message);
+            } else {
+                writeServerError(resp, message);
+            }
         } catch (ReflectiveOperationException e) {
-            writeServerError(resp, "Erreur d'invocation : " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            String message = "Erreur d'invocation : " + e.getClass().getSimpleName() + " - " + e.getMessage();
+            if (route.isApi()) {
+                writeApiError(resp, message);
+            } else {
+                writeServerError(resp, message);
+            }
+        } catch (RuntimeException e) {
+            if (route.isApi()) {
+                writeApiError(resp, e.getMessage());
+            } else {
+                throw e;
+            }
         }
+    }
+
+    private void writeApiResponse(HttpServletResponse resp, Method action, Object result) throws IOException {
+        if (resp.isCommitted()) {
+            return;
+        }
+        if (action.getReturnType() == void.class) {
+            resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
+            return;
+        }
+        String body;
+        if (result instanceof String) {
+            body = (String) result;
+        } else if (result instanceof ModelAndView) {
+            body = JsonSerializer.toJson(((ModelAndView) result).getAttributes());
+        } else {
+            body = JsonSerializer.toJson(result);
+        }
+        resp.setStatus(HttpServletResponse.SC_OK);
+        resp.setContentType("application/json;charset=UTF-8");
+        PrintWriter out = resp.getWriter();
+        out.print(body);
+        out.flush();
+    }
+
+    private void writeApiError(HttpServletResponse resp, String message) throws IOException {
+        if (resp.isCommitted()) {
+            return;
+        }
+        resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        resp.setContentType("application/json;charset=UTF-8");
+        PrintWriter out = resp.getWriter();
+        out.print("{\"status\":500,\"error\":" + JsonSerializer.quote(message) + "}");
+        out.flush();
     }
 
     private String buildRouteFoundHtml(String path, RouteInfo route) {

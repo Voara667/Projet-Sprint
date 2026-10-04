@@ -32,5 +32,6 @@ Le script compile le framework, génère `framework.jar`, le copie avec les jars
 - Instancie et invoque réellement chaque contrôleur (nouvelle instance à chaque requête).
 - Une action peut retourner un `ModelAndView` : le framework transfère les données vers la vue et l'affiche (JSP), sinon elle affiche un simple diagnostic.
 - Une action peut demander un `ApplicationContext` Spring en paramètre, pour aller chercher des beans (repository, service) gérés par Spring — `null` si Spring n'est pas démarré, pas d'erreur du framework dans ce cas.
+- Une action ou une classe peut être annotée `@WebApi` pour produire directement une réponse JSON, sans forward JSP. Une chaîne `String` est écrite telle quelle ; les autres objets sont convertis par le convertisseur JSON intégré, sans dépendance externe. Un `ModelAndView` API est sérialisé comme sa map d'attributs, une action `void` répond `204`, et un retour `null` produit le JSON `null`. Les erreurs d'invocation ou de sérialisation des routes API répondent en JSON avec le statut `500`, tandis que les erreurs de routage `404` et `405` restent en HTML.
 
 Note importante: le contrôleur doit toujours passer par ApplicationContext ctx en paramètre et appeler ctx.getBean(...) lui-même. 
