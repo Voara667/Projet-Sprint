@@ -13,9 +13,12 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.context.ApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
 
@@ -75,7 +78,10 @@ public class FrontServletController extends HttpServlet {
 
     private void processRequest(HttpServletRequest req, HttpServletResponse resp) throws IOException, UrlNotFoundException, HttpMethodNotSupportedException, ServletException {
         String path = req.getPathInfo();
-        if (path == null) {
+        if (path == null || path.isEmpty()) {
+            path = req.getServletPath();
+        }
+        if (path == null || path.isEmpty()) {
             path = "/";
         }
         String reqMethod = req.getMethod();
@@ -108,6 +114,9 @@ public class FrontServletController extends HttpServlet {
         try {
             Object controllerInstance = route.getControllerClass().getDeclaredConstructor().newInstance();
             Method action = route.getAction();
+            if (req.getCharacterEncoding() == null) {
+                req.setCharacterEncoding("UTF-8");
+            }
             Object[] args = buildActionArguments(action, req, resp);
             Object result = action.invoke(controllerInstance, args);
             if (route.isApi()) {
@@ -145,6 +154,12 @@ public class FrontServletController extends HttpServlet {
             } else {
                 writeServerError(resp, message);
             }
+        } catch (ParameterBindingException e) {
+            if (route.isApi()) {
+                writeApiError(resp, HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
+            } else {
+                writeBadRequest(resp, e.getMessage());
+            }
         } catch (RuntimeException e) {
             if (route.isApi()) {
                 writeApiError(resp, e.getMessage());
@@ -178,13 +193,28 @@ public class FrontServletController extends HttpServlet {
     }
 
     private void writeApiError(HttpServletResponse resp, String message) throws IOException {
+        writeApiError(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, message);
+    }
+
+    private void writeApiError(HttpServletResponse resp, int status, String message) throws IOException {
         if (resp.isCommitted()) {
             return;
         }
-        resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        resp.setStatus(status);
         resp.setContentType("application/json;charset=UTF-8");
         PrintWriter out = resp.getWriter();
-        out.print("{\"status\":500,\"error\":" + JsonSerializer.quote(message) + "}");
+        out.print("{\"status\":" + status + ",\"error\":" + JsonSerializer.quote(message) + "}");
+        out.flush();
+    }
+
+    private void writeBadRequest(HttpServletResponse resp, String message) throws IOException {
+        resp.setContentType("text/html;charset=UTF-8");
+        resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        PrintWriter out = resp.getWriter();
+        out.println("<!DOCTYPE html>");
+        out.println("<html><head><meta charset=\"UTF-8\"><title>400 Bad Request</title></head><body>");
+        out.println("<section><h1>Requête invalide</h1><pre>" + escapeHtml(message) + "</pre></section>");
+        out.println("</body></html>");
         out.flush();
     }
 
@@ -262,11 +292,14 @@ public class FrontServletController extends HttpServlet {
         out.flush();
     }
 
-    private Object[] buildActionArguments(Method action, HttpServletRequest req, HttpServletResponse resp) {
+    private Object[] buildActionArguments(Method action, HttpServletRequest req, HttpServletResponse resp)
+            throws ParameterBindingException {
         Class<?>[] parameterTypes = action.getParameterTypes();
+        Parameter[] parameters = action.getParameters();
         Object[] args = new Object[parameterTypes.length];
         ApplicationContext applicationContext = null;
         boolean applicationContextResolved = false;
+        Set<String> requestParameterNames = null;
         for (int i = 0; i < parameterTypes.length; i++) {
             Class<?> type = parameterTypes[i];
             if (ApplicationContext.class.isAssignableFrom(type)) {
@@ -279,8 +312,17 @@ public class FrontServletController extends HttpServlet {
                 args[i] = req;
             } else if (HttpServletResponse.class.isAssignableFrom(type)) {
                 args[i] = resp;
+            } else if (ParameterBinder.isSimpleType(type)) {
+                if (requestParameterNames == null) {
+                    requestParameterNames = new HashSet<>();
+                    java.util.Enumeration<String> names = req.getParameterNames();
+                    while (names != null && names.hasMoreElements()) {
+                        requestParameterNames.add(names.nextElement());
+                    }
+                }
+                args[i] = ParameterBinder.bind(parameters[i], requestParameterNames, req);
             } else {
-                throw new IllegalArgumentException("Type de parametre non supporte : " + type.getName());
+                args[i] = null;
             }
         }
         return args;

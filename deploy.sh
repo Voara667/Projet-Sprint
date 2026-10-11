@@ -120,7 +120,7 @@ else
         # Compile all controllers of the target project
         CONTROLLER_SOURCES=$(find "$TEST_APP_DIR/WEB-INF/classes" -name "*.java")
         if [ -n "$CONTROLLER_SOURCES" ]; then
-          javac -cp "$SERVLET_JAR:$TEST_APP_DIR/WEB-INF/lib/$JAR_NAME:$SPRING_CP" -d "$TEST_APP_DIR/WEB-INF/classes" $CONTROLLER_SOURCES
+          javac -parameters -cp "$SERVLET_JAR:$TEST_APP_DIR/WEB-INF/lib/$JAR_NAME:$SPRING_CP" -d "$TEST_APP_DIR/WEB-INF/classes" $CONTROLLER_SOURCES
           if [ $? -ne 0 ]; then
             echo "Erreur lors de la compilation des controllers de $APP_NAME." >&2
           else
