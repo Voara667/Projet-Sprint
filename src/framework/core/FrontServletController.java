@@ -314,18 +314,28 @@ public class FrontServletController extends HttpServlet {
                 args[i] = resp;
             } else if (ParameterBinder.isSimpleType(type)) {
                 if (requestParameterNames == null) {
-                    requestParameterNames = new HashSet<>();
-                    java.util.Enumeration<String> names = req.getParameterNames();
-                    while (names != null && names.hasMoreElements()) {
-                        requestParameterNames.add(names.nextElement());
-                    }
+                    requestParameterNames = collectParameterNames(req);
                 }
                 args[i] = ParameterBinder.bind(parameters[i], requestParameterNames, req);
+            } else if (ObjectBinder.isBindableObject(type)) {
+                if (requestParameterNames == null) {
+                    requestParameterNames = collectParameterNames(req);
+                }
+                args[i] = ObjectBinder.bind(parameters[i], requestParameterNames, req);
             } else {
                 args[i] = null;
             }
         }
         return args;
+    }
+
+    private Set<String> collectParameterNames(HttpServletRequest req) {
+        Set<String> names = new HashSet<>();
+        java.util.Enumeration<String> parameterNames = req.getParameterNames();
+        while (parameterNames != null && parameterNames.hasMoreElements()) {
+            names.add(parameterNames.nextElement());
+        }
+        return names;
     }
 
     private ApplicationContext getSpringApplicationContext() {

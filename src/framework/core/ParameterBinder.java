@@ -35,7 +35,11 @@ public final class ParameterBinder {
         }
         String name = parameter.getName();
         String raw = requestParameterNames.contains(name) ? req.getParameter(name) : null;
-        Class<?> type = parameter.getType();
+        return convert(name, raw, parameter.getType());
+    }
+
+    public static Object convert(String displayName, String raw, Class<?> type)
+            throws ParameterBindingException {
         if (type == String.class) {
             return raw;
         }
@@ -59,7 +63,7 @@ public final class ParameterBinder {
             if (type == BigInteger.class) return new BigInteger(value);
             if (type == LocalDate.class) return LocalDate.parse(value);
         } catch (DateTimeParseException | IllegalArgumentException e) {
-            throw conversionError(name, raw, type, e.getMessage());
+            throw conversionError(displayName, raw, type, e.getMessage());
         }
         return null;
     }
