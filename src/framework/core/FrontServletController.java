@@ -14,6 +14,8 @@ import java.io.PrintWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -117,6 +119,7 @@ public class FrontServletController extends HttpServlet {
             if (req.getCharacterEncoding() == null) {
                 req.setCharacterEncoding("UTF-8");
             }
+            MultipartSupport.prepare(req);
             Object[] args = buildActionArguments(action, req, resp);
             Object result = action.invoke(controllerInstance, args);
             if (route.isApi()) {
@@ -159,6 +162,12 @@ public class FrontServletController extends HttpServlet {
                 writeApiError(resp, HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
             } else {
                 writeBadRequest(resp, e.getMessage());
+            }
+        } catch (UploadException e) {
+            if (route.isApi()) {
+                writeApiError(resp, e.getStatus(), e.getMessage());
+            } else {
+                writeUploadError(resp, e);
             }
         } catch (RuntimeException e) {
             if (route.isApi()) {
@@ -214,6 +223,19 @@ public class FrontServletController extends HttpServlet {
         out.println("<!DOCTYPE html>");
         out.println("<html><head><meta charset=\"UTF-8\"><title>400 Bad Request</title></head><body>");
         out.println("<section><h1>Requête invalide</h1><pre>" + escapeHtml(message) + "</pre></section>");
+        out.println("</body></html>");
+        out.flush();
+    }
+
+    private void writeUploadError(HttpServletResponse resp, UploadException exception) throws IOException {
+        resp.setContentType("text/html;charset=UTF-8");
+        resp.setStatus(exception.getStatus());
+        PrintWriter out = resp.getWriter();
+        out.println("<!DOCTYPE html>");
+        out.println("<html><head><meta charset=\"UTF-8\"><title>" + exception.getStatus()
+                + " Upload Error</title></head><body>");
+        out.println("<section><h1>Erreur d'envoi</h1><pre>"
+                + escapeHtml(exception.getMessage()) + "</pre></section>");
         out.println("</body></html>");
         out.flush();
     }
@@ -293,13 +315,14 @@ public class FrontServletController extends HttpServlet {
     }
 
     private Object[] buildActionArguments(Method action, HttpServletRequest req, HttpServletResponse resp)
-            throws ParameterBindingException {
+            throws ParameterBindingException, IOException, ServletException {
         Class<?>[] parameterTypes = action.getParameterTypes();
         Parameter[] parameters = action.getParameters();
         Object[] args = new Object[parameterTypes.length];
         ApplicationContext applicationContext = null;
         boolean applicationContextResolved = false;
         Set<String> requestParameterNames = null;
+        Map<String, UploadedFile> uploadedFiles = null;
         for (int i = 0; i < parameterTypes.length; i++) {
             Class<?> type = parameterTypes[i];
             if (ApplicationContext.class.isAssignableFrom(type)) {
@@ -312,6 +335,20 @@ public class FrontServletController extends HttpServlet {
                 args[i] = req;
             } else if (HttpServletResponse.class.isAssignableFrom(type)) {
                 args[i] = resp;
+            } else if (type == UploadedFile.class || type == byte[].class
+                    || isUploadedFilesMap(parameters[i])) {
+                String name = parameterName(parameters[i]);
+                if (uploadedFiles == null) {
+                    uploadedFiles = MultipartSupport.readFiles(req);
+                }
+                UploadedFile file = uploadedFiles.get(name);
+                if (isUploadedFilesMap(parameters[i])) {
+                    args[i] = uploadedFiles;
+                } else if (type == UploadedFile.class) {
+                    args[i] = file;
+                } else {
+                    args[i] = file == null ? null : file.getBytes();
+                }
             } else if (ParameterBinder.isSimpleType(type)) {
                 if (requestParameterNames == null) {
                     requestParameterNames = collectParameterNames(req);
@@ -321,12 +358,38 @@ public class FrontServletController extends HttpServlet {
                 if (requestParameterNames == null) {
                     requestParameterNames = collectParameterNames(req);
                 }
-                args[i] = ObjectBinder.bind(parameters[i], requestParameterNames, req);
+                if (ObjectBinder.hasFileFields(type)) {
+                    if (uploadedFiles == null) {
+                        uploadedFiles = MultipartSupport.readFiles(req);
+                    }
+                } else if (uploadedFiles == null) {
+                    uploadedFiles = java.util.Collections.emptyMap();
+                }
+                args[i] = ObjectBinder.bind(parameters[i], requestParameterNames, req,
+                        uploadedFiles);
             } else {
                 args[i] = null;
             }
         }
         return args;
+    }
+
+    private boolean isUploadedFilesMap(Parameter parameter) {
+        if (!Map.class.equals(parameter.getType())
+                || !(parameter.getParameterizedType() instanceof ParameterizedType)) {
+            return false;
+        }
+        Type[] types = ((ParameterizedType) parameter.getParameterizedType()).getActualTypeArguments();
+        return types.length == 2 && types[0] == String.class && types[1] == UploadedFile.class;
+    }
+
+    private String parameterName(Parameter parameter) {
+        if (!parameter.isNamePresent()) {
+            throw new IllegalArgumentException("Nom de paramètre indisponible pour "
+                    + parameter.getType().getName()
+                    + "; compiler les controllers avec javac -parameters.");
+        }
+        return parameter.getName();
     }
 
     private Set<String> collectParameterNames(HttpServletRequest req) {
