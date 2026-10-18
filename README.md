@@ -43,6 +43,11 @@ Le `web.xml` du projet cible doit déclarer ceci :
 <servlet>
     <servlet-name>FrontServletController</servlet-name>
     <servlet-class>framework.core.FrontServletController</servlet-class>
+    <multipart-config>
+        <max-file-size>2097152</max-file-size>
+        <max-request-size>10485760</max-request-size>
+        <file-size-threshold>0</file-size-threshold>
+    </multipart-config>
 </servlet>
 <servlet-mapping>
     <servlet-name>FrontServletController</servlet-name>
@@ -123,3 +128,49 @@ Il n'y a pas de forward dans ce cas. Si l'action retourne un `String`, il est é
 - le scan ne lit que `WEB-INF/classes`, pas les jars de `WEB-INF/lib`
 - avec le mapping `/`, notre servlet remplace celle de Tomcat qui sert les fichiers statiques, donc les images ou le CSS ne seraient pas servis
 - pas de validation des objets, et tout champ simple peut être rempli par la requête, même un champ sensible
+
+## Envoyer des fichiers
+
+Pour envoyer un fichier, le formulaire doit utiliser `enctype="multipart/form-data"`.
+Il faut aussi ajouter, à la fin de l'élément `<servlet>` de `web.xml`, un bloc
+`<multipart-config>` :
+
+```xml
+<multipart-config>
+    <max-file-size>2097152</max-file-size>
+    <max-request-size>10485760</max-request-size>
+    <file-size-threshold>0</file-size-threshold>
+</multipart-config>
+```
+
+Sans ce bloc, une requête multipart répond 500 et demande d'ajouter la
+configuration. Les limites sont celles du conteneur, pas des constantes du
+framework.
+
+On peut recevoir un fichier comme champ d'un objet, comme paramètre direct, ou
+dans une map. Par exemple, ce contrôleur compile :
+
+```java
+@Controller
+@WebApi
+public class UploadController {
+    @RequestMapping(value = "/upload", method = HttpMethod.POST)
+    public Map<String, Object> upload(UploadedFile photo, String titre) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("titre", titre);
+        result.put("nom", photo == null ? null : photo.getFileName());
+        return result;
+    }
+}
+```
+
+Pour une map, on utilise `Map<String, UploadedFile>`. Pour un objet, un champ
+`UploadedFile` ou `byte[]` porte le même nom que l'input file. `UploadedFile`
+contient le nom du champ, le nom d'origine nettoyé, l'extension en minuscules,
+le type MIME déclaré, la taille et les octets. `getBytes()` renvoie le tableau
+en mémoire tel quel.
+
+Un fichier trop gros répond 413. Le framework ne stocke rien sur le disque et
+ne vérifie pas l'extension ou le type MIME : le nom et le type déclarés ne sont
+pas fiables. Un seul fichier est retenu par nom de champ, et le fichier est
+entièrement lu en mémoire. C'est au contrôleur de décider quoi en faire.
