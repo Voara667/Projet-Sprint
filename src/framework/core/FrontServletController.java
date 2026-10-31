@@ -113,6 +113,15 @@ public class FrontServletController extends HttpServlet {
             }
         }
 
+        if (route.isAuthenticated() && !AuthConfig.isAuthenticated(req)) {
+            if (route.isApi()) {
+                writeApiError(resp, HttpServletResponse.SC_UNAUTHORIZED, "Authentification requise.");
+            } else {
+                writeUnauthorized(resp);
+            }
+            return;
+        }
+
         String html = buildRouteFoundHtml(path, route);
         try {
             Object controllerInstance = route.getControllerClass().getDeclaredConstructor().newInstance();
@@ -215,6 +224,17 @@ public class FrontServletController extends HttpServlet {
         resp.setContentType("application/json;charset=UTF-8");
         PrintWriter out = resp.getWriter();
         out.print("{\"status\":" + status + ",\"error\":" + JsonSerializer.quote(message) + "}");
+        out.flush();
+    }
+
+    private void writeUnauthorized(HttpServletResponse resp) throws IOException {
+        resp.setContentType("text/html;charset=UTF-8");
+        resp.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        PrintWriter out = resp.getWriter();
+        out.println("<!DOCTYPE html>");
+        out.println("<html><head><meta charset=\"UTF-8\"><title>401 Unauthorized</title></head><body>");
+        out.println("<section><h1>Authentification requise</h1></section>");
+        out.println("</body></html>");
         out.flush();
     }
 
