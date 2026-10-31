@@ -122,6 +122,26 @@ public class FrontServletController extends HttpServlet {
             return;
         }
 
+        if (route.isRoleRestricted()) {
+            try {
+                if (!AuthConfig.hasAnyRole(req, route.getRoles())) {
+                    if (route.isApi()) {
+                        writeApiError(resp, HttpServletResponse.SC_FORBIDDEN, "Accès refusé.");
+                    } else {
+                        writeForbidden(resp);
+                    }
+                    return;
+                }
+            } catch (IllegalStateException e) {
+                if (route.isApi()) {
+                    writeApiError(resp, e.getMessage());
+                } else {
+                    writeServerError(resp, e.getMessage());
+                }
+                return;
+            }
+        }
+
         String html = buildRouteFoundHtml(path, route);
         try {
             Object controllerInstance = route.getControllerClass().getDeclaredConstructor().newInstance();
@@ -234,6 +254,17 @@ public class FrontServletController extends HttpServlet {
         out.println("<!DOCTYPE html>");
         out.println("<html><head><meta charset=\"UTF-8\"><title>401 Unauthorized</title></head><body>");
         out.println("<section><h1>Authentification requise</h1></section>");
+        out.println("</body></html>");
+        out.flush();
+    }
+
+    private void writeForbidden(HttpServletResponse resp) throws IOException {
+        resp.setContentType("text/html;charset=UTF-8");
+        resp.setStatus(HttpServletResponse.SC_FORBIDDEN);
+        PrintWriter out = resp.getWriter();
+        out.println("<!DOCTYPE html>");
+        out.println("<html><head><meta charset=\"UTF-8\"><title>403 Forbidden</title></head><body>");
+        out.println("<section><h1>Accès refusé</h1></section>");
         out.println("</body></html>");
         out.flush();
     }
