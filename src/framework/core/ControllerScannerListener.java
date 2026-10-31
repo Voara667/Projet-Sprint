@@ -17,6 +17,7 @@ public class ControllerScannerListener implements ServletContextListener, HttpSe
         try {
             Map<UrlMethod, RouteInfo> routes = RouteLoader.loadRoutes(ctx);
             ctx.setAttribute("framework.routes", routes);
+            AuthConfig.install(ctx, routes);
         } catch (Exception e) {
             throw new FrameworkStartupException("Échec du scan des controllers au démarrage.", e);
         }
@@ -27,6 +28,7 @@ public class ControllerScannerListener implements ServletContextListener, HttpSe
         ServletContext ctx = sce.getServletContext();
         ctx.removeAttribute("framework.routes");
         SessionManager.uninstall(ctx);
+        AuthConfig.uninstall(ctx);
         ctx.log("[FRAMEWORK] framework.routes removed from ServletContext.");
     }
 

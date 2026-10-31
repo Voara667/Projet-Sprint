@@ -32,6 +32,10 @@ Le `web.xml` du projet cible doit déclarer ceci :
     <param-name>contextConfigLocation</param-name>
     <param-value>/WEB-INF/applicationContext.xml</param-value>
 </context-param>
+<context-param>
+    <param-name>framework.authSessionKey</param-name>
+    <param-value>user</param-value>
+</context-param>
 
 <listener>
     <listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
@@ -128,7 +132,8 @@ Il n'y a pas de forward dans ce cas. Si l'action retourne un `String`, il est é
 - le scan ne lit que `WEB-INF/classes`, pas les jars de `WEB-INF/lib`
 - avec le mapping `/`, notre servlet remplace celle de Tomcat qui sert les fichiers statiques, donc les images ou le CSS ne seraient pas servis
 - pas de validation des objets, et tout champ simple peut être rempli par la requête, même un champ sensible
-- pas de gestion de l'autorisation pour le moment ; c'est prévu au sprint suivant
+- pas de gestion des rôles et des autorisations fines ; c'est prévu au sprint suivant
+- l'authentification vérifie seulement qu'une valeur existe dans la session ; le framework ne vérifie ni mot de passe ni identité
 - le changement d'id avec `changeSessionId` n'est pas géré
 
 ## La session
@@ -162,6 +167,61 @@ Une JSP peut relire les valeurs recopiées avec
 s'exécutent en même temps, il n'y a pas de garantie d'atomicité et la dernière
 écriture peut gagner. Les valeurs devraient être sérialisables si Tomcat doit
 persister les sessions.
+
+## Réserver une action aux utilisateurs connectés
+
+On ajoute `@Authenticated` sur une méthode pour protéger une action, ou sur une
+classe pour protéger toutes ses actions. Il faut configurer le nom de la clé
+utilisée pour reconnaître une connexion dans le `web.xml` :
+
+```xml
+<context-param>
+    <param-name>framework.authSessionKey</param-name>
+    <param-value>user</param-value>
+</context-param>
+```
+
+Ici, on considère qu'une personne est connectée si la session contient une
+valeur non nulle sous la clé `user`. On peut remplir cette clé depuis une action
+qui reçoit `Session` :
+
+```java
+import framework.core.ModelAndView;
+import framework.core.Session;
+import framework.core.annotation.Authenticated;
+import framework.core.annotation.Controller;
+import framework.core.annotation.RequestMapping;
+
+@Controller
+public class AuthController {
+
+    @RequestMapping("/login")
+    public ModelAndView login(Session session, String nom) {
+        session.set("user", nom);
+        ModelAndView mv = new ModelAndView();
+        mv.setUrl("profil");
+        mv.setAttribute("user", nom);
+        return mv;
+    }
+
+    @Authenticated
+    @RequestMapping("/profil")
+    public ModelAndView profil(Session session) {
+        ModelAndView mv = new ModelAndView();
+        mv.setUrl("profil");
+        mv.setAttribute("user", session.get("user"));
+        return mv;
+    }
+}
+```
+
+On déconnecte la personne avec `session.remove("user")` ou
+`session.invalidate()`. Une action protégée répond 401 sans redirection :
+`@WebApi` renvoie une erreur JSON, les autres actions une page HTML. Si une
+route protégée existe et que `framework.authSessionKey` est absent ou vide,
+l'application échoue au démarrage. Le framework vérifie seulement que la clé
+est présente ; il ne vérifie ni mot de passe ni identité. La gestion des rôles
+et des autorisations est prévue au sprint suivant.
 
 ## Envoyer des fichiers
 
