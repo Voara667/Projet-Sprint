@@ -128,6 +128,40 @@ Il n'y a pas de forward dans ce cas. Si l'action retourne un `String`, il est é
 - le scan ne lit que `WEB-INF/classes`, pas les jars de `WEB-INF/lib`
 - avec le mapping `/`, notre servlet remplace celle de Tomcat qui sert les fichiers statiques, donc les images ou le CSS ne seraient pas servis
 - pas de validation des objets, et tout champ simple peut être rempli par la requête, même un champ sensible
+- pas de gestion de l'autorisation pour le moment ; c'est prévu au sprint suivant
+- le changement d'id avec `changeSessionId` n'est pas géré
+
+## La session
+
+Une action peut recevoir `framework.core.Session`. Le framework charge les
+attributs de la session HTTP avant l'action, puis recopie les changements si
+l'action se termine sans erreur :
+
+```java
+@RequestMapping("/compteur")
+public ModelAndView compteur(Session session) {
+    Integer n = session.get("compteur", Integer.class);
+    session.set("compteur", n == null ? 1 : n + 1);
+    ModelAndView mv = new ModelAndView();
+    mv.setUrl("compteur");
+    mv.setAttribute("compteur", n == null ? 1 : n + 1);
+    return mv;
+}
+```
+
+`Session` fournit `getId`, `get`, `set`, `remove`, `contains`, `clear`,
+`getData` et `invalidate`. `set` renvoie la session pour chaîner les appels ;
+mettre une valeur à `null` supprime la clé. `getData()` donne accès directement
+à la map. Après `invalidate()`, `set` lève une erreur et la session HTTP est
+invalidée à la fin de l'action.
+
+Une JSP peut relire les valeurs recopiées avec
+`session.getAttribute("compteur")`. Les actions ne reçoivent pas directement
+`HttpSession` : ce paramètre est refusé avec une erreur 500 ; on utilise
+`framework.core.Session` à la place. Si deux requêtes du même utilisateur
+s'exécutent en même temps, il n'y a pas de garantie d'atomicité et la dernière
+écriture peut gagner. Les valeurs devraient être sérialisables si Tomcat doit
+persister les sessions.
 
 ## Envoyer des fichiers
 
