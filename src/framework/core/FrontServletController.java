@@ -9,6 +9,7 @@ import jakarta.servlet.ServletContext;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.InvocationTargetException;
@@ -122,6 +123,7 @@ public class FrontServletController extends HttpServlet {
             MultipartSupport.prepare(req);
             Object[] args = buildActionArguments(action, req, resp);
             Object result = action.invoke(controllerInstance, args);
+            SessionManager.saveAll(args, req);
             if (route.isApi()) {
                 writeApiResponse(resp, action, result);
             } else if (result instanceof ModelAndView) {
@@ -335,6 +337,11 @@ public class FrontServletController extends HttpServlet {
                 args[i] = req;
             } else if (HttpServletResponse.class.isAssignableFrom(type)) {
                 args[i] = resp;
+            } else if (type == Session.class) {
+                args[i] = SessionManager.obtain(req);
+            } else if (HttpSession.class.isAssignableFrom(type)) {
+                throw new IllegalArgumentException("HttpSession n'est pas fournie aux actions : "
+                        + "déclarez un paramètre framework.core.Session.");
             } else if (type == UploadedFile.class || type == byte[].class
                     || isUploadedFilesMap(parameters[i])) {
                 String name = parameterName(parameters[i]);
