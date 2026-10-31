@@ -36,6 +36,10 @@ Le `web.xml` du projet cible doit déclarer ceci :
     <param-name>framework.authSessionKey</param-name>
     <param-value>user</param-value>
 </context-param>
+<context-param>
+    <param-name>framework.rolesSessionKey</param-name>
+    <param-value>roles</param-value>
+</context-param>
 
 <listener>
     <listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
@@ -132,8 +136,8 @@ Il n'y a pas de forward dans ce cas. Si l'action retourne un `String`, il est é
 - le scan ne lit que `WEB-INF/classes`, pas les jars de `WEB-INF/lib`
 - avec le mapping `/`, notre servlet remplace celle de Tomcat qui sert les fichiers statiques, donc les images ou le CSS ne seraient pas servis
 - pas de validation des objets, et tout champ simple peut être rempli par la requête, même un champ sensible
-- pas de gestion des rôles et des autorisations fines ; c'est prévu au sprint suivant
 - l'authentification vérifie seulement qu'une valeur existe dans la session ; le framework ne vérifie ni mot de passe ni identité
+- pas de hiérarchie de rôles ni de condition « tous les rôles »
 - le changement d'id avec `changeSessionId` n'est pas géré
 
 ## La session
@@ -220,8 +224,66 @@ On déconnecte la personne avec `session.remove("user")` ou
 `@WebApi` renvoie une erreur JSON, les autres actions une page HTML. Si une
 route protégée existe et que `framework.authSessionKey` est absent ou vide,
 l'application échoue au démarrage. Le framework vérifie seulement que la clé
-est présente ; il ne vérifie ni mot de passe ni identité. La gestion des rôles
-et des autorisations est prévue au sprint suivant.
+est présente ; il ne vérifie ni mot de passe ni identité.
+
+## Réserver une action à certains rôles
+
+On ajoute `@Roles("prof")` sur une méthode, ou sur une classe pour protéger
+toutes ses actions. Si la méthode et la classe ont toutes les deux `@Roles`, la
+méthode remplace la configuration de la classe.
+
+Il faut configurer la clé qui contient les rôles dans `web.xml` :
+
+```xml
+<context-param>
+    <param-name>framework.rolesSessionKey</param-name>
+    <param-value>roles</param-value>
+</context-param>
+```
+
+Au moment de la connexion, c'est le contrôleur qui remplit la session. Le
+framework accepte un `String` pour un seul rôle, un tableau ou une collection :
+
+```java
+import framework.core.HttpMethod;
+import framework.core.ModelAndView;
+import framework.core.Session;
+import framework.core.annotation.Controller;
+import framework.core.annotation.RequestMapping;
+import framework.core.annotation.Roles;
+
+@Controller
+public class RoleController {
+    @RequestMapping("/login")
+    public ModelAndView login(Session session, String nom) {
+        session.set("user", nom);
+        session.set("roles", new String[] {"prof"});
+        ModelAndView mv = new ModelAndView();
+        mv.setUrl("profil");
+        mv.setAttribute("user", nom);
+        return mv;
+    }
+
+    @Roles({"prof", "admin"})
+    @RequestMapping(value = "/notes", method = HttpMethod.GET)
+    public ModelAndView notes(Session session) {
+        ModelAndView mv = new ModelAndView();
+        mv.setUrl("notes");
+        mv.setAttribute("user", session.get("user"));
+        return mv;
+    }
+}
+```
+
+Il suffit d'avoir au moins un rôle demandé par l'action. La comparaison respecte
+la casse. Une chaîne comme `"prof,admin"` représente un seul rôle. Une personne
+non connectée reçoit 401. Une personne connectée sans le bon rôle reçoit 403,
+en HTML ou en JSON si la route porte `@WebApi`. Si une route à rôles existe
+sans `framework.rolesSessionKey`, ou avec `@Roles({})` ou un rôle vide, le
+démarrage échoue. Le framework fait confiance aux valeurs placées dans la
+session par l'application : il ne vérifie ni l'identité ni le mot de passe. Il
+n'y a pas de hiérarchie entre les rôles ni de condition exigeant plusieurs
+rôles à la fois.
 
 ## Envoyer des fichiers
 
